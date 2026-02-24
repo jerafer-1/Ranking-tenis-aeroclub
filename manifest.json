@@ -1,10 +1,10 @@
 {
   "name": "Ranking Tenis Aeroclub",
-  "short_name": "Ranking Tenis",
+  "short_name": "RTA",
   "start_url": "/Ranking-tenis-aeroclub/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#E2725B",
+  "theme_color": "#1E3A8A",
   "icons": [
     {
       "src": "icon-192x192.png",
