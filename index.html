@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranking de Tenis - Club</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#ea580c">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ranking Tenis">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2862/2862833.png">
+
+    <!-- iPhone Splash Screens (Simplified approach for now) -->
+    <link rel="apple-touch-startup-image" href="https://cdn-icons-png.flaticon.com/512/2862/2862833.png">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #432e1f;
+            color: #f8fafc;
+            background-image:
+                linear-gradient(rgba(67, 46, 31, 0.7), rgba(67, 46, 31, 0.7)),
+                url('https://www.atptour.com/-/media/images/atp-tour-stadiums/roland-garros-stadium-court-philippe-chatrier.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+
+            /* Handling iOS notch and bottom bar */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            min-height: 100vh;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(251, 146, 60, 0.15);
+            box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        .tennis-gradient {
+            background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+        }
+
+        .lime-gradient {
+            background: linear-gradient(135deg, #bef264 0%, #84cc16 100%);
+        }
+
+        .tab-active {
+            color: #fb923c;
+            border-bottom: 2px solid #fb923c;
+        }
+
+        .clay-text {
+            color: #fb923c;
+        }
+
+        .clay-bg {
+            background-color: #ea580c;
+        }
+
+        .watermark {
+            position: fixed;
+            bottom: -50px;
+            right: -20px;
+            width: 800px;
+            opacity: 0.05;
+            pointer-events: none;
+            z-index: -1;
+            user-select: none;
+            transform: rotate(-15deg);
+        }
+
+        .global-watermark {
+            position: fixed;
+            bottom: 40px;
+            right: -20px;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.04;
+            user-select: none;
+            overflow: hidden;
+            transform: rotate(-10deg);
+            white-space: nowrap;
+        }
+
+        .global-watermark span {
+            font-weight: 900;
+            font-size: 4rem;
+            letter-spacing: -0.05em;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        @keyframes bounce-subtle {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-4px);
+            }
+        }
+
+        .animate-bounce-subtle {
+            animation: bounce-subtle 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+
+<body>
+    <img src="https://www.atptour.com/-/media/images/atp-tour-stadiums/roland-garros-stadium-court-philippe-chatrier.jpg"
+        class="watermark" alt="Roland Garros" />
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Utilidades ---
+        const saveToStorage = (key, data) => localStorage.setItem(`tennis_ranking_${key}`, JSON.stringify(data));
+        const getFromStorage = (key, defaultValue) => {
+            const saved = localStorage.getItem(`tennis_ranking_${key}`);
+            return saved ? JSON.parse(saved) : defaultValue;
+        };
+
+        const generateRoundRobin = (players) => {
+            if (players.length < 2) return [];
+            let pool = [...players];
+            if (pool.length % 2 !== 0) pool.push({ id: 'bye', name: 'Descanso' });
+
+            const rounds = pool.length - 1;
+            const matches = [];
+
+            for (let r = 0; r < rounds; r++) {
+                for (let i = 0; i < pool.length / 2; i++) {
+                    const p1 = pool[i];
+                    const p2 = pool[pool.length - 1 - i];
+                    if (p1.id !== 'bye' && p2.id !== 'bye') {
+                        matches.push({
+                            id: `m-${Date.now()}-${Math.random()}`,
+                            p1: p1.id,
+                            p2: p2.id,
+                            p1Name: p1.name,
+                            p2Name: p2.name,
+                            score1: '',
+                            score2: '',
+                            played: false,
+                            round: r + 1
+                        });
+                    }
+                }
+                pool.splice(1, 0, pool.pop());
+            }
+            return matches;
+        };
+
+        const Icon = ({ name, className = "w-5 h-5" }) => {
+            useEffect(() => { lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        const StatCard = ({ icon, label, value, color, bg, onClick }) => (
+            <div
+                onClick={onClick}
+                className={`glass p-6 rounded-2xl ${bg} ${onClick ? 'cursor-pointer hover:scale-105 transition-all duration-300' : ''}`}
+            >
+                <div className="flex items-center justify-between mb-2">
+                    <Icon name={icon} className={color} />
+                    <span className={`text-2xl font-black ${color}`}>{value}</span>
+                </div>
+                <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">{label}</p>
+            </div>
+        );
+
+        const SetInput = ({ val1, val2, onUpdate, disabled }) => {
+            const parse = (s) => (s || '').split(/[\s,]+/).filter(x => x !== '');
+            const s1 = parse(val1);
+            const s2 = parse(val2);
+
+            const update = (setIdx, isP1, val) => {
+                if (disabled) return;
+                const newS1 = [...s1];
+                const newS2 = [...s2];
+                if (isP1) newS1[setIdx] = val;
+                else newS2[setIdx] = val;
+                onUpdate(newS1.join(' '), newS2.join(' '));
+            };
+
+            return (
+                <div className="flex flex-col gap-2">
+                    {[0, 1, 2].map(idx => (
+                        <div key={idx} className="flex items-center gap-1">
+                            <input
+                                className={`w-8 h-8 bg-slate-900 text-center rounded text-xs border border-slate-700/50 outline-none transition-all ${disabled ? 'opacity-50 cursor-not-allowed border-none' : 'focus:border-orange-500'}`}
+                                placeholder="0"
+                                value={s1[idx] || ''}
+                                onChange={e => update(idx, true, e.target.value)}
+                                disabled={disabled}
+                            />
+                            <span className="text-[10px] text-slate-700">-</span>
+                            <input
+                                className={`w-8 h-8 bg-slate-900 text-center rounded text-xs border border-slate-700/50 outline-none transition-all ${disabled ? 'opacity-50 cursor-not-allowed border-none' : 'focus:border-orange-500'}`}
+                                placeholder="0"
+                                value={s2[idx] || ''}
+                                onChange={e => update(idx, false, e.target.value)}
+                                disabled={disabled}
+                            />
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+
+
+        const Dashboard = ({ groups, players, matches, stats, config, setActiveTab, setSelectedGroup }) => (
+            <div className="space-y-8 animate-in fade-in duration-500 relative">
+                <div className="global-watermark">
+                    <span>Tenis Aeroclub Córdoba</span>
+                </div>
+                <div className="flex items-center justify-between">
+                    <h2 className="text-3xl font-bold">Visión General del Ranking</h2>
+                    <div className="text-sm bg-orange-600/10 text-orange-400 px-4 py-1 rounded-full border border-orange-600/20 font-bold">
+                        {config.club}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <StatCard icon="users" label="Tenistas" value={stats.totalPlayers} color="text-orange-400" bg="bg-orange-500/10" onClick={() => setActiveTab('players')} />
+                    <StatCard icon="layers" label="Grupos" value={stats.totalGroups} color="text-lime-400" bg="bg-lime-500/10" onClick={() => setActiveTab('groups')} />
+                    <StatCard icon="clock" label="Pendientes" value={stats.pendingMatches} color="text-amber-400" bg="bg-amber-500/10" onClick={() => setActiveTab('results')} />
+                    <StatCard icon="check-circle" label="Completos" value={stats.playedMatches} color="text-orange-400" bg="bg-orange-600/10" onClick={() => setActiveTab('standings')} />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    {groups.map(g => {
+                        const gPlayers = players.filter(p => p.groupId === g.id).length;
+                        const gMatches = matches.filter(m => m.groupId === g.id);
+                        const played = gMatches.filter(m => m.played).length;
+                        const progress = gMatches.length > 0 ? (played / gMatches.length) * 100 : 0;
+                        return (
+                            <div
+                                key={g.id}
+                                onClick={() => { setSelectedGroup(g.id); setActiveTab('groups'); }}
+                                className="glass p-5 rounded-2xl border-l-4 border-l-orange-600 hover:scale-[1.02] cursor-pointer transition-all"
+                            >
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className="text-[10px] font-bold bg-neutral-800 px-2 py-0.5 rounded uppercase">{g.id.startsWith('g') && !g.id.includes('-') ? g.id : 'GRP'}</span>
+                                    <span className="text-[10px] text-neutral-500">{gPlayers}/6</span>
+                                </div>
+                                <h3 className="font-bold truncate" title={g.name}>{g.name}</h3>
+                                <div className="mt-4 space-y-1">
+                                    <div className="w-full bg-neutral-800 h-1 rounded-full overflow-hidden">
+                                        <div className="bg-orange-600 h-full transition-all" style={{ width: `${progress}%` }}></div>
+                                    </div>
+                                    <p className="text-[10px] text-neutral-400 text-right">{Math.round(progress)}% completado</p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Historial Reciente */}
+                <div className="glass p-6 rounded-3xl space-y-4">
+                    <div className="flex items-center gap-3">
+                        <Icon name="clock-3" className="text-orange-400" />
+                        <h4 className="font-bold uppercase tracking-widest text-sm">Últimos Partidos Jugados</h4>
+                    </div>
+                    <div className="divide-y divide-white/5">
+                        {matches.filter(m => m.played).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, 10).map(m => (
+                            <div key={m.id} className="py-3 flex items-center justify-between gap-4 text-xs">
+                                <span className="text-slate-500 font-bold w-12">{groups.find(g => g.id === m.groupId)?.id.toUpperCase()}</span>
+                                <div className="flex-1 text-right truncate font-bold">{m.p1Name}</div>
+                                <div className="bg-orange-600/10 text-orange-400 px-2 py-1 rounded font-black min-w-[60px] text-center">
+                                    {m.score1} - {m.score2}
+                                </div>
+                                <div className="flex-1 truncate font-bold">{m.p2Name}</div>
+                            </div>
+                        ))}
+                        {matches.filter(m => m.played).length === 0 && (
+                            <p className="text-center py-4 text-slate-500 italic text-sm">No hay partidos jugados todavía.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+
+        const PlayerView = ({ players, groups, addPlayer, updatePlayer, deletePlayer }) => {
+            const [groupInputs, setGroupInputs] = useState({});
+            const [editingId, setEditingId] = useState(null);
+            const [editValue, setEditValue] = useState('');
+            const [editGroupValue, setEditGroupValue] = useState('');
+
+            const startEdit = (p) => {
+                setEditingId(p.id);
+                setEditValue(p.name);
+                setEditGroupValue(p.groupId);
+            };
+
+            const saveEdit = () => {
+                if (editValue.trim()) {
+                    updatePlayer(editingId, editValue, editGroupValue);
+                    setEditingId(null);
+                }
+            };
+
+            const handleGroupInputChange = (groupId, value) => {
+                setGroupInputs(prev => ({ ...prev, [groupId]: value }));
+            };
+
+            const handleAddPlayerToGroup = (groupId) => {
+                const name = groupInputs[groupId];
+                if (name && name.trim()) {
+                    addPlayer(name, groupId);
+                    setGroupInputs(prev => ({ ...prev, [groupId]: '' }));
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="glass p-6 rounded-3xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Icon name="users" className="text-orange-400 w-6 h-6" />
+                            <h3 className="text-xl font-black uppercase tracking-widest">Inscripción por Grupos</h3>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                            {groups.map(g => (
+                                <div key={g.id} className="bg-neutral-900/40 p-3 rounded-2xl border border-white/5 flex flex-col gap-2 group hover:border-orange-500/30 transition-all">
+                                    <span className="text-[10px] font-black text-orange-400 uppercase tracking-tighter truncate">{g.name}</span>
+                                    <div className="flex gap-2">
+                                        <input
+                                            className="w-full bg-neutral-800 border-none rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-1 ring-orange-500"
+                                            placeholder="Nombre..."
+                                            value={groupInputs[g.id] || ''}
+                                            onChange={e => handleGroupInputChange(g.id, e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleAddPlayerToGroup(g.id)}
+                                        />
+                                        <button
+                                            onClick={() => handleAddPlayerToGroup(g.id)}
+                                            className="bg-orange-600/20 text-orange-400 p-1.5 rounded-lg hover:bg-orange-600 hover:text-white transition-all"
+                                        >
+                                            <Icon name="plus" className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="glass rounded-2xl overflow-hidden overflow-x-auto">
+                        <table className="w-full text-left min-w-[600px]">
+                            <thead className="bg-neutral-800/50 text-neutral-400 text-xs font-bold uppercase">
+                                <tr>
+                                    <th className="px-6 py-4">Nombre</th>
+                                    <th className="px-6 py-4">Grupo</th>
+                                    <th className="px-6 py-4 text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-neutral-800">
+                                {players.map(p => (
+                                    <tr key={p.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-6 py-4 font-medium">
+                                            {editingId === p.id ? (
+                                                <input
+                                                    autoFocus
+                                                    className="bg-neutral-900 border border-orange-600/50 rounded px-2 py-1 outline-none w-full"
+                                                    value={editValue}
+                                                    onChange={e => setEditValue(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                                                />
+                                            ) : (
+                                                p.name
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {editingId === p.id ? (
+                                                <select
+                                                    className="bg-neutral-800 border border-orange-600/50 rounded px-2 py-1 outline-none text-xs w-full"
+                                                    value={editGroupValue}
+                                                    onChange={e => setEditGroupValue(e.target.value)}
+                                                >
+                                                    <option value="">Sin Grupo</option>
+                                                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                                </select>
+                                            ) : (
+                                                <span className="text-xs bg-neutral-800 px-3 py-1 rounded-full">
+                                                    {groups.find(g => g.id === p.groupId)?.name || 'Sin Asignar'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                {editingId === p.id ? (
+                                                    <>
+                                                        <button onClick={saveEdit} className="text-lime-400 hover:text-lime-300 p-2">
+                                                            <Icon name="check" className="w-4 h-4" />
+                                                        </button>
+                                                        <button onClick={() => setEditingId(null)} className="text-red-400 hover:text-red-300 p-2">
+                                                            <Icon name="x" className="w-4 h-4" />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => startEdit(p)} className="text-orange-400 hover:text-orange-300 p-2">
+                                                            <Icon name="edit-2" className="w-4 h-4" />
+                                                        </button>
+                                                        <button onClick={() => deletePlayer(p.id)} className="text-red-400 hover:text-red-300 p-2">
+                                                            <Icon name="trash-2" className="w-4 h-4" />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const GroupView = ({ groups, players, addPlayer, addGroup, updateGroup, deleteGroup, generateMatchesForGroup, selectedId, setSelectedId }) => {
+            const [newName, setNewName] = useState('');
+            const [newPlayerName, setNewPlayerName] = useState('');
+            const [editingId, setEditingId] = useState(null);
+            const [editValue, setEditValue] = useState('');
+
+            const selectedGroup = groups.find(g => g.id === selectedId) || groups[0];
+
+            const handleAddPlayer = () => {
+                if (!newPlayerName.trim()) return;
+                addPlayer(newPlayerName, selectedGroup.id);
+                setNewPlayerName('');
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="md:col-span-1 space-y-4">
+                            <div className="glass p-6 rounded-2xl">
+                                <h3 className="text-xl font-bold mb-4">Grupos</h3>
+                                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {groups.map(g => (
+                                        <div key={g.id} className="flex items-center gap-2 group">
+                                            <button
+                                                onClick={() => setSelectedId(g.id)}
+                                                className={`flex-grow text-left px-4 py-2 rounded-xl transition-all font-bold ${selectedId === g.id ? 'tennis-gradient text-slate-900 shadow-lg' : 'hover:bg-white/5 text-slate-300'}`}
+                                            >
+                                                {editingId === g.id ? (
+                                                    <input
+                                                        autoFocus
+                                                        className="bg-neutral-900 border border-orange-600/50 rounded px-2 py-0.5 outline-none w-full text-slate-300"
+                                                        value={editValue}
+                                                        onChange={e => setEditValue(e.target.value)}
+                                                        onBlur={() => { updateGroup(g.id, editValue); setEditingId(null); }}
+                                                        onKeyDown={e => e.key === 'Enter' && (updateGroup(g.id, editValue), setEditingId(null))}
+                                                    />
+                                                ) : g.name}
+                                            </button>
+                                            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => { setEditingId(g.id); setEditValue(g.name); }} className="p-2 text-slate-500 hover:text-orange-400">
+                                                    <Icon name="edit-3" className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => deleteGroup(g.id)} className="p-2 text-slate-500 hover:text-red-400">
+                                                    <Icon name="trash-2" className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-4 flex gap-2 pt-4 border-t border-white/5">
+                                    <input
+                                        className="bg-neutral-800 border-none rounded-xl px-4 py-2 w-full text-sm outline-none"
+                                        placeholder="Nuevo grupo..."
+                                        value={newName} onChange={e => setNewName(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && (addGroup(newName), setNewName(''))}
+                                    />
+                                    <button onClick={() => { addGroup(newName); setNewName(''); }} className="p-2 bg-orange-600/20 text-orange-400 rounded-xl hover:bg-orange-600/30">
+                                        <Icon name="plus" className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="md:col-span-2 space-y-6">
+                            {selectedGroup && (
+                                <div className="glass p-6 rounded-2xl animate-in fade-in duration-300">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-2xl font-bold flex items-center gap-2">
+                                            <Icon name="layers" className="text-orange-400" />
+                                            {selectedGroup.name}
+                                        </h3>
+                                        <button
+                                            onClick={() => generateMatchesForGroup(selectedGroup.id)}
+                                            className="bg-lime-600/20 text-lime-400 font-bold px-4 py-2 rounded-xl border border-lime-600/20 hover:bg-lime-600/30 transition-all flex items-center gap-2 text-sm"
+                                        >
+                                            <Icon name="refresh-cw" className="w-4 h-4" /> REGENERAR PARTIDOS
+                                        </button>
+                                    </div>
+
+                                    <div className="mb-6 p-4 bg-orange-600/5 rounded-2xl border border-orange-600/10 flex gap-3">
+                                        <input
+                                            className="flex-grow bg-neutral-900 border-none rounded-xl px-4 py-2 text-sm outline-none focus:ring-1 ring-orange-500"
+                                            placeholder="Nombre del nuevo tenista..."
+                                            value={newPlayerName}
+                                            onChange={e => setNewPlayerName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleAddPlayer()}
+                                        />
+                                        <button
+                                            onClick={handleAddPlayer}
+                                            className="bg-orange-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-orange-700 transition-all flex items-center gap-2 text-sm"
+                                        >
+                                            <Icon name="user-plus" className="w-4 h-4" /> AÑADIR
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {players.filter(p => p.groupId === selectedGroup.id).map(p => (
+                                            <div key={p.id} className="bg-neutral-800/50 p-4 rounded-xl border border-white/5 flex items-center gap-4">
+                                                <div className="w-10 h-10 tennis-gradient rounded-full flex items-center justify-center font-bold text-slate-900 uppercase">
+                                                    {p.name.charAt(0)}
+                                                </div>
+                                                <span className="font-bold">{p.name}</span>
+                                            </div>
+                                        ))}
+                                        {players.filter(p => p.groupId === selectedGroup.id).length === 0 && (
+                                            <p className="col-span-full text-center py-12 text-slate-500 italic">No hay jugadores asignados a este grupo.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const GenerationView = ({ groups, players, generateMatchesForGroup, matches }) => (
+            <div className="space-y-6">
+                <div className="glass p-8 rounded-3xl space-y-4">
+                    <h3 className="text-2xl font-bold">Generador Cordobés</h3>
+                    <p className="text-slate-400">Pulsa el botón de cada grupo para crear los enfrentamientos "Round Robin" (todos contra todos).</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {groups.map(g => {
+                        const gPlayers = players.filter(p => p.groupId === g.id);
+                        const gMatches = matches.filter(m => m.groupId === g.id);
+                        return (
+                            <div key={g.id} className="glass p-6 rounded-2xl flex flex-col justify-between hover:border-orange-500/30 transition-all group">
+                                <div className="space-y-2">
+                                    <h4 className="font-bold text-lg">{g.name}</h4>
+                                    <div className="flex justify-between text-xs text-slate-400">
+                                        <span>{gPlayers.length} Jugadores</span>
+                                        <span>{gMatches.length} Partidos</span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => generateMatchesForGroup(g.id)}
+                                    className="mt-6 w-full py-3 bg-neutral-800 hover:bg-orange-600 hover:text-white text-orange-400 font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Icon name="refresh-ccw" className="group-hover:rotate-180 transition-transform duration-500" />
+                                    Generar Enfrentamientos
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+
+        const ResultsView = ({ groups, matches, updateMatch, lockMatch }) => {
+            const [filterGroupId, setFilterGroupId] = useState('all');
+
+            const visibleGroups = filterGroupId === 'all'
+                ? groups
+                : groups.filter(g => g.id === filterGroupId);
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <h3 className="text-2xl font-bold">Registro de Resultados</h3>
+                        <div className="flex items-center gap-2 bg-neutral-800 p-1 rounded-xl border border-white/5">
+                            <span className="text-xs font-bold text-neutral-500 px-2 uppercase tracking-widest">Filtrar:</span>
+                            <select
+                                className="bg-transparent border-none text-sm font-bold text-orange-400 outline-none pr-4"
+                                value={filterGroupId}
+                                onChange={(e) => setFilterGroupId(e.target.value)}
+                            >
+                                <option value="all">Ver Todos los Grupos</option>
+                                {groups.map(g => (
+                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {visibleGroups.map(g => {
+                        const groupMatches = matches.filter(m => m.groupId === g.id);
+                        if (groupMatches.length === 0) return null;
+                        return (
+                            <div key={g.id} className="space-y-4">
+                                <h4 className="text-lime-400 font-bold uppercase tracking-widest text-xs border-b border-slate-700/50 pb-2">{g.name}</h4>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    {groupMatches.map(m => (
+                                        <div
+                                            key={m.id}
+                                            className={`glass p-4 rounded-xl flex items-center justify-between gap-4 transition-all border-2 ${m.locked
+                                                ? 'bg-orange-100/5 border-orange-500/20 opacity-90'
+                                                : m.played
+                                                    ? 'bg-lime-500/10 border-lime-500/30'
+                                                    : 'bg-neutral-800/20 border-white/5 opacity-80'
+                                                }`}
+                                        >
+                                            <div className="flex-grow flex items-center gap-4">
+                                                <div className={`flex-1 text-right font-bold text-sm truncate ${m.played ? 'text-lime-100' : 'text-slate-400'}`}>{m.p1Name}</div>
+                                                <SetInput
+                                                    val1={m.score1}
+                                                    val2={m.score2}
+                                                    onUpdate={(s1, s2) => updateMatch(m.id, s1, s2)}
+                                                    disabled={m.locked}
+                                                />
+                                                <div className={`flex-1 font-bold text-sm truncate ${m.played ? 'text-lime-100' : 'text-slate-400'}`}>{m.p2Name}</div>
+                                            </div>
+                                            <div className="flex flex-col items-center gap-2">
+                                                {m.played && !m.locked ? (
+                                                    <button
+                                                        onClick={() => { if (confirm('¿Bloquear resultado? Ya no podrá editarse.')) lockMatch(m.id); }}
+                                                        className="text-slate-500 hover:text-orange-500 transition-colors"
+                                                        title="Bloquear Resultado"
+                                                    >
+                                                        <Icon name="unlock" className="w-5 h-5" />
+                                                    </button>
+                                                ) : m.locked ? (
+                                                    <div className="text-orange-500" title="Resultado Bloqueado">
+                                                        <Icon name="lock" className="w-5 h-5" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-slate-700">
+                                                        <Icon name="circle" className="w-5 h-5" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        const RankingChart = ({ table, title }) => {
+            const chartRef = React.useRef(null);
+            const chartInstance = React.useRef(null);
+
+            useEffect(() => {
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+
+                if (chartRef.current) {
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: table.map(p => p.name),
+                            datasets: [{
+                                label: 'Puntos',
+                                data: table.map(p => p.pts),
+                                backgroundColor: 'rgba(234, 88, 12, 0.4)',
+                                borderColor: 'rgba(234, 88, 12, 1)',
+                                borderWidth: 2,
+                                borderRadius: 5,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    titleFont: { size: 14, weight: 'bold' },
+                                    padding: 12,
+                                    cornerRadius: 10
+                                }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                                x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                            }
+                        }
+                    });
+                }
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [table]);
+
+            return (
+                <div className="glass p-4 rounded-2xl h-[280px]">
+                    <canvas ref={chartRef}></canvas>
+                </div>
+            );
+        };
+
+        const RankIndicator = ({ rank, tableSize, groupIdx, totalGroups }) => {
+            let icon = null;
+            let color = "";
+
+            // Ascenso
+            if (rank === 1) {
+                if (groupIdx === 1) { icon = "chevron-up"; color = "text-lime-400"; }
+                else if (groupIdx >= 2) { icon = "chevrons-up"; color = "text-lime-400"; }
+            } else if (rank === 2 && groupIdx >= 1 && groupIdx <= 8) {
+                icon = "chevron-up"; color = "text-lime-400";
+            }
+
+            // Descenso
+            if (rank === tableSize) {
+                if (groupIdx === totalGroups - 2) { icon = "chevron-down"; color = "text-red-500"; }
+                else if (groupIdx <= totalGroups - 3) { icon = "chevrons-down"; color = "text-red-500"; }
+            } else if (rank === tableSize - 1 && groupIdx < totalGroups - 1) {
+                icon = "chevron-down"; color = "text-red-500";
+            }
+
+            if (!icon) return null;
+            return <Icon name={icon} className={`inline-block ml-1 w-3 h-3 ${color}`} />;
+        };
+
+        const StandingsView = ({ groups, calculateStandings, exportToPDF }) => {
+            return (
+                <div className="space-y-8" id="main-content">
+                    <div className="flex justify-between items-center no-pdf">
+                        <h3 className="text-2xl font-bold">Clasificación General</h3>
+                        <button
+                            onClick={exportToPDF}
+                            className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-orange-400 font-bold px-4 py-2 rounded-xl border border-orange-400/20 transition-all"
+                        >
+                            <Icon name="download" className="w-4 h-4" />
+                            Exportar PDF
+                        </button>
+                    </div>
+                    {groups.map(g => {
+                        const table = calculateStandings(g.id);
+                        if (table.length === 0) return null;
+                        return (
+                            <div key={g.id} className="space-y-4">
+                                <h4 className="text-lg font-bold flex items-center gap-2">
+                                    <span className="w-2 h-6 tennis-gradient rounded-full"></span>
+                                    {g.name}
+                                </h4>
+                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                                    <div className="xl:col-span-1">
+                                        <RankingChart table={table} title={g.name} />
+                                    </div>
+                                    <div className="xl:col-span-2 glass rounded-2xl overflow-hidden overflow-x-auto">
+                                        <table className="w-full text-left text-sm min-w-[700px]">
+                                            <thead className="bg-slate-800/50 text-slate-500 font-bold uppercase text-[10px]">
+                                                <tr>
+                                                    <th className="px-6 py-3 w-12 text-center">Pos</th>
+                                                    <th className="px-6 py-3">Jugador</th>
+                                                    <th className="px-6 py-3 text-center">PJ</th>
+                                                    <th className="px-6 py-3 text-center">PG</th>
+                                                    <th className="px-6 py-3 text-center">PP</th>
+                                                    <th className="px-6 py-3 text-center">Sets</th>
+                                                    <th className="px-6 py-3 text-center">Juegos</th>
+                                                    <th className="px-6 py-3 text-center text-lime-400 font-black">PTS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-700">
+                                                {table.map((row, idx) => {
+                                                    const rank = idx + 1;
+                                                    const groupIdx = groups.findIndex(gr => gr.id === g.id);
+
+                                                    // Determinamos clase de fondo según ascenso/descenso
+                                                    let bgClass = "hover:bg-white/5";
+                                                    if (rank === 1 && groupIdx > 0) bgClass = "bg-lime-500/10";
+                                                    else if (rank === 2 && groupIdx >= 1 && groupIdx <= 8) bgClass = "bg-lime-500/5";
+                                                    else if (rank === table.length && groupIdx < groups.length - 1) bgClass = "bg-slate-900/60";
+                                                    else if (rank === table.length - 1 && groupIdx < groups.length - 1) bgClass = "bg-slate-900/40";
+
+                                                    return (
+                                                        <tr key={row.id} className={bgClass}>
+                                                            <td className="px-6 py-3 text-center font-bold text-slate-400">{rank}</td>
+                                                            <td className="px-6 py-3 font-bold flex items-center">
+                                                                {row.name}
+                                                                <RankIndicator rank={rank} tableSize={table.length} groupIdx={groupIdx} totalGroups={groups.length} />
+                                                            </td>
+                                                            <td className="px-6 py-3 text-center">{row.pj}</td>
+                                                            <td className="px-6 py-3 text-center text-green-400">{row.pg}</td>
+                                                            <td className="px-6 py-3 text-center text-red-400">{row.pp}</td>
+                                                            <td className="px-6 py-3 text-center text-slate-400">{row.sf}-{row.sc}</td>
+                                                            <td className="px-6 py-3 text-center text-slate-400">{row.gf}-{row.gc}</td>
+                                                            <td className="px-6 py-3 text-center font-black text-lime-400">{row.pts}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        const RelegationView = ({ groups, calculateStandings, executeSeasonClose }) => {
+            const getPreview = () => {
+                const changes = [];
+                const sortedGroups = [...groups];
+                sortedGroups.forEach((g, idx) => {
+                    const table = calculateStandings(g.id);
+                    if (table.length === 0) return;
+
+                    // 1er Puesto
+                    if (idx > 0) {
+                        const winner = table[0];
+                        const targetIdx = Math.max(0, idx - (idx >= 2 ? 2 : 1));
+                        changes.push({ player: winner, from: g.id, to: sortedGroups[targetIdx].id, type: 'sube' });
+                    }
+
+                    // 2do Puesto (G2 al G9 -> suben 1)
+                    if (idx >= 1 && idx <= 8 && table.length >= 2) {
+                        const second = table[1];
+                        changes.push({ player: second, from: g.id, to: sortedGroups[idx - 1].id, type: 'sube' });
+                    }
+
+                    // Último Puesto
+                    if (idx < sortedGroups.length - 1) {
+                        const loser = table[table.length - 1];
+                        const targetIdx = Math.min(sortedGroups.length - 1, idx + (idx <= sortedGroups.length - 3 ? 2 : 1));
+                        changes.push({ player: loser, from: g.id, to: sortedGroups[targetIdx].id, type: 'baja' });
+                    }
+
+                    // Penúltimo Puesto (Salvo el último grupo)
+                    if (idx < sortedGroups.length - 1 && table.length >= 2) {
+                        const penultimate = table[table.length - 2];
+                        changes.push({ player: penultimate, from: g.id, to: sortedGroups[idx + 1].id, type: 'baja' });
+                    }
+                });
+                return changes;
+            };
+
+            const preview = getPreview();
+
+            return (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="glass p-8 rounded-3xl border-l-8 border-orange-500 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-8 opacity-5">
+                            <Icon name="quote" className="w-32 h-32" />
+                        </div>
+                        <div className="relative z-10 space-y-4">
+                            <div className="flex items-center gap-3 text-orange-400">
+                                <Icon name="heart" className="w-6 h-6 fill-current" />
+                                <h3 className="text-xl font-black uppercase tracking-widest">Mensaje del Organizador</h3>
+                            </div>
+                            <p className="text-lg text-slate-200 leading-relaxed italic">
+                                "¡Hola a todos, tenistas! Queremos agradecerles por otra jornada de gran nivel y convivencia.
+                                Recordemos que el alma de este ranking es el **juego limpio** y el **respeto** mutuo.
+                                La competencia nos hace mejores, pero el compromiso con el compañero es lo que nos define como club.
+                                ¡A seguir disfrutando del tenis!"
+                            </p>
+                            <p className="text-sm font-bold text-orange-500">— Comité de Competición Aeroclub</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-sm">
+                        <div className="glass p-6 rounded-2xl space-y-6">
+                            <h4 className="font-black uppercase tracking-widest text-lime-400 flex items-center gap-2">
+                                <Icon name="info" className="w-4 h-4" /> Reglas de Movimiento
+                            </h4>
+                            <div className="space-y-4">
+                                <div className="flex gap-4 p-3 bg-lime-500/5 rounded-xl border border-lime-500/10">
+                                    <Icon name="chevrons-up" className="text-lime-400 w-8 h-8 shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-lime-100">Ascenso Doble</p>
+                                        <p className="text-slate-400">El 1º de cada grupo sube 2 categorías (salvo en G1 y G2).</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 p-3 bg-lime-500/5 rounded-xl border border-lime-500/10">
+                                    <Icon name="chevron-up" className="text-lime-400 w-8 h-8 shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-lime-100">Ascenso Simple</p>
+                                        <p className="text-slate-400">El 2º de cada grupo (G2 al G9) sube 1 categoría.</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 p-3 bg-red-500/5 rounded-xl border border-red-500/10">
+                                    <Icon name="chevron-down" className="text-red-400 w-8 h-8 shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-red-100">Descenso Simple</p>
+                                        <p className="text-slate-400">El penúltimo de cada grupo baja 1 categoría.</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 p-3 bg-red-500/5 rounded-xl border border-red-500/10">
+                                    <Icon name="chevrons-down" className="text-red-400 w-8 h-8 shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-red-100">Descenso Doble</p>
+                                        <p className="text-slate-400">El último de cada grupo baja 2 categorías (salvo penúltimo y último grupo).</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="glass p-6 rounded-2xl flex flex-col">
+                            <h4 className="font-black uppercase tracking-widest text-orange-400 flex items-center gap-2 mb-6">
+                                <Icon name="eye" className="w-4 h-4" /> Cambios Previstos ({preview.length})
+                            </h4>
+                            <div className="flex-grow space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                {preview.length === 0 ? (
+                                    <div className="h-40 flex flex-col items-center justify-center text-slate-500 italic">
+                                        <Icon name="list-x" className="w-8 h-8 mb-2 opacity-20" />
+                                        Sin cambios pendientes
+                                    </div>
+                                ) : (
+                                    preview.map((change, i) => (
+                                        <div key={i} className="bg-neutral-900/40 p-3 rounded-xl border border-white/5 flex items-center justify-between group">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-lg ${change.type === 'sube' ? 'bg-lime-500/10' : 'bg-red-500/10'}`}>
+                                                    <Icon name={change.type === 'sube' ? 'arrow-up-right' : 'arrow-down-right'} className={`w-4 h-4 ${change.type === 'sube' ? 'text-lime-400' : 'text-red-400'}`} />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm">{change.player.name}</p>
+                                                    <p className="text-[10px] text-slate-500 uppercase tracking-tighter">
+                                                        {groups.find(g => g.id === change.from)?.name} <Icon name="arrow-right" className="inline w-2 h-2 mx-1" /> {groups.find(g => g.id === change.to)?.name}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${change.type === 'sube' ? 'bg-lime-500/10 text-lime-400' : 'bg-red-500/10 text-red-400'}`}>
+                                                {change.type === 'sube' ? 'ASCIENDE' : 'DESCIENDE'}
+                                            </span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            <div className="mt-6 pt-6 border-t border-slate-700">
+                                <button
+                                    onClick={() => executeSeasonClose(preview)}
+                                    disabled={preview.length === 0}
+                                    className={`w-full font-black px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-3 ${preview.length > 0
+                                        ? 'tennis-gradient text-slate-900 shadow-xl shadow-lime-500/10 hover:scale-[1.02]'
+                                        : 'bg-neutral-800 text-slate-500 cursor-not-allowed opacity-50'
+                                        }`}
+                                >
+                                    <Icon name="save" className="w-5 h-5" /> EJECUTAR CIERRE DE JORNADA
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const HistoryView = ({ history }) => {
+            const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+            const selectedSeason = history.find(h => h.id === selectedHistoryId);
+            return (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-orange-600/10 rounded-2xl border border-orange-600/20">
+                            <Icon name="history" className="w-6 h-6 text-orange-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-bold">Historial de Temporadas</h3>
+                            <p className="text-sm text-slate-400">Consulta los cierres de jornada anteriores</p>
+                        </div>
+                    </div>
+                    {history.length === 0 ? (
+                        <div className="glass p-12 rounded-3xl text-center space-y-4">
+                            <div className="p-4 bg-slate-800/50 rounded-full w-16 h-16 mx-auto flex items-center justify-center">
+                                <Icon name="calendar-days" className="w-8 h-8 text-slate-600" />
+                            </div>
+                            <h4 className="text-xl font-bold text-slate-300">Aún no hay historia</h4>
+                            <p className="text-slate-500 max-w-sm mx-auto">Cuando ejecutes el primer "Cierre de Jornada", aparecerá aquí el resumen de la temporada.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                            <div className="lg:col-span-1 space-y-3">
+                                <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">Temporadas Guardadas</h4>
+                                <div className="space-y-2">
+                                    {history.map(item => (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => setSelectedHistoryId(item.id)}
+                                            className={`w-full p-4 rounded-2xl text-left transition-all flex items-center justify-between border ${selectedHistoryId === item.id
+                                                ? 'tennis-gradient text-slate-900 border-transparent shadow-lg shadow-orange-500/20'
+                                                : 'glass border-white/5 hover:bg-white/5 text-slate-300'}`}
+                                        >
+                                            <div>
+                                                <p className="font-bold">Temporada {item.seasonNumber}</p>
+                                                <p className={`text-[10px] ${selectedHistoryId === item.id ? 'text-slate-800' : 'text-slate-500'}`}>{item.date}</p>
+                                            </div>
+                                            <Icon name="chevron-right" className="w-4 h-4 opacity-50" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="lg:col-span-3">
+                                {!selectedSeason ? (
+                                    <div className="glass h-full min-h-[400px] rounded-3xl flex flex-col items-center justify-center p-8 text-center text-slate-500 space-y-4">
+                                        <Icon name="mouse-pointer-2" className="w-12 h-12 opacity-10" />
+                                        <p className="italic">Selecciona una temporada para ver los resultados finales</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6 animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-end border-b border-slate-700/50 pb-4">
+                                            <div>
+                                                <h4 className="text-2xl font-black text-orange-400">Resultados Temporada {selectedSeason.seasonNumber}</h4>
+                                                <p className="text-sm text-slate-500">Cierre ejecutado el {selectedSeason.date}</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {selectedSeason.results.map(groupResult => (
+                                                <div key={groupResult.groupId} className="glass p-5 rounded-2xl border-l-4 border-l-orange-500/50">
+                                                    <h5 className="font-bold mb-3 flex items-center justify-between">{groupResult.groupName}</h5>
+                                                    <div className="space-y-1">
+                                                        {groupResult.standings.slice(0, 3).map((player, pIdx) => (
+                                                            <div key={player.id} className="flex items-center justify-between text-xs py-1">
+                                                                <span className="flex items-center gap-2">{pIdx + 1}. {player.name}</span>
+                                                                <span className="font-bold text-slate-400">{player.pts} pts</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const ConfigView = ({ config, setConfig, groups, setGroups, exportData, importData, installApp, showInstallBtn }) => (
+            <div className="max-w-2xl mx-auto space-y-6">
+                <div className="glass p-8 rounded-3xl space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="p-3 bg-orange-600/20 rounded-2xl"><Icon name="settings" className="text-orange-400" /></div>
+                        <h3 className="text-2xl font-black uppercase tracking-widest">Ajustes del Club</h3>
+                    </div>
+
+                    {showInstallBtn && (
+                        <div className="p-6 bg-lime-500/10 rounded-2xl border-2 border-lime-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 animate-bounce-subtle">
+                            <div className="flex items-center gap-4 text-center sm:text-left">
+                                <Icon name="smartphone" className="text-lime-400 w-8 h-8" />
+                                <div>
+                                    <p className="font-black text-lime-100 uppercase tracking-tighter">App Instalable</p>
+                                    <p className="text-xs text-slate-400">Instala esta app en tu pantalla de inicio</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={installApp}
+                                className="w-full sm:w-auto bg-black text-lime-400 font-black px-6 py-3 rounded-xl border border-lime-400/50 hover:bg-lime-400 hover:text-black transition-all uppercase tracking-widest text-xs"
+                            >
+                                Instalar Ahora
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Nombre del Club</label>
+                        <input
+                            className="w-full bg-neutral-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-orange-600 outline-none text-lg"
+                            value={config.club} onChange={e => setConfig({ ...config, club: e.target.value })}
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Puntos por Victoria</label>
+                            <input
+                                type="number" className="w-full bg-neutral-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-orange-600"
+                                value={config.winPoints} onChange={e => setConfig({ ...config, winPoints: parseInt(e.target.value) || 0 })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Puntos por Derrota</label>
+                            <input
+                                type="number" className="w-full bg-neutral-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-orange-600"
+                                value={config.lossPoints} onChange={e => setConfig({ ...config, lossPoints: parseInt(e.target.value) || 0 })}
+                            />
+                        </div>
+                    </div>
+                    <div className="pt-6 border-t border-slate-700 flex flex-col gap-4">
+                        <button
+                            onClick={() => {
+                                const names = ["Elite", "Diamante", "Platino", "Oro", "Titanio", "Plata", "Grafeno", "Cobre", "Bronce", "Hierro"];
+                                const newGroups = groups.map((g, i) => ({ ...g, name: `${i + 1}- ${names[i] || `Grupo ${i + 1}`}` }));
+                                setGroups(newGroups);
+                                alert('Nombres de grupos actualizados.');
+                            }}
+                            className="text-lime-400 hover:text-lime-300 text-sm font-bold flex items-center gap-2"
+                        >
+                            <Icon name="refresh-cw" className="w-4 h-4" /> REGLABADO DE NOMBRES DE GRUPOS
+                        </button>
+                        <button
+                            onClick={() => { if (confirm('¿Borrar TODOS los datos del ranking?')) { localStorage.clear(); location.reload(); } }}
+                            className="text-red-400 hover:text-red-300 text-sm font-bold flex items-center gap-2"
+                        >
+                            <Icon name="trash" className="w-4 h-4" /> REINICIAR TODA LA APP
+                        </button>
+                    </div>
+                    <div className="pt-6 border-t border-slate-700 space-y-4">
+                        <h4 className="text-sm font-bold text-neutral-400 uppercase tracking-widest">Copia de Seguridad</h4>
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            <button onClick={exportData} className="flex-1 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 font-bold py-3 px-4 rounded-xl border border-orange-600/20 flex items-center justify-center gap-2 transition-all">
+                                <Icon name="upload" className="w-4 h-4" /> Descargar Backup
+                            </button>
+                            <label className="flex-1 bg-lime-600/10 hover:bg-lime-600/20 text-lime-400 font-bold py-3 px-4 rounded-xl border border-lime-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all">
+                                <Icon name="download" className="w-4 h-4" /> Restaurar Backup
+                                <input type="file" accept=".json" onChange={importData} className="hidden" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [selectedGroup, setSelectedGroup] = useState(null);
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+            useEffect(() => {
+                const handler = (e) => {
+                    e.preventDefault();
+                    setDeferredPrompt(e);
+                };
+                window.addEventListener('beforeinstallprompt', handler);
+                return () => window.removeEventListener('beforeinstallprompt', handler);
+            }, []);
+
+            const installApp = async () => {
+                if (!deferredPrompt) return;
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') setDeferredPrompt(null);
+            };
+
+            const [players, setPlayers] = useState(() => JSON.parse(localStorage.getItem('players')) || []);
+            const [groups, setGroups] = useState(() => JSON.parse(localStorage.getItem('groups')) || [
+                { id: 'g1', name: '1- Elite' },
+                { id: 'g2', name: '2- Diamante' },
+                { id: 'g3', name: '3- Platino' },
+                { id: 'g4', name: '4- Oro' },
+                { id: 'g5', name: '5- Titanio' },
+                { id: 'g6', name: '6- Plata' },
+                { id: 'g7', name: '7- Grafeno' },
+                { id: 'g8', name: '8- Cobre' },
+                { id: 'g9', name: '9- Bronce' },
+                { id: 'g10', name: '10- Hierro' }
+            ]);
+            const [matches, setMatches] = useState(() => JSON.parse(localStorage.getItem('matches')) || []);
+            const [history, setHistory] = useState(() => JSON.parse(localStorage.getItem('history')) || []);
+            const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('config')) || {
+                club: 'AEROCLUB RÁNKING',
+                winPoints: 3,
+                lossPoints: 1
+            });
+
+            useEffect(() => {
+                localStorage.setItem('players', JSON.stringify(players));
+                localStorage.setItem('groups', JSON.stringify(groups));
+                localStorage.setItem('matches', JSON.stringify(matches));
+                localStorage.setItem('history', JSON.stringify(history));
+                localStorage.setItem('config', JSON.stringify(config));
+            }, [players, groups, matches, history, config]);
+
+            const stats = useMemo(() => {
+                return {
+                    totalPlayers: players.length,
+                    totalGroups: groups.length,
+                    pendingMatches: matches.filter(m => !m.played).length,
+                    playedMatches: matches.filter(m => m.played).length
+                };
+            }, [players, groups, matches]);
+
+            // --- Handlers ---
+            const addPlayer = (name, groupId) => {
+                setPlayers([...players, { id: `p-${Date.now()}`, name, groupId }]);
+            };
+            const deletePlayer = (id) => {
+                if (confirm('¿Eliminar tenista del ranking?')) {
+                    setPlayers(players.filter(p => p.id !== id));
+                }
+            };
+
+            const updatePlayer = (id, newName, newGroupId) => {
+                setPlayers(players.map(p => p.id === id ? { ...p, name: newName, groupId: newGroupId } : p));
+                setMatches(matches.map(m => {
+                    let updated = { ...m };
+                    if (m.p1 === id) updated.p1Name = newName;
+                    if (m.p2 === id) updated.p2Name = newName;
+                    return updated;
+                }));
+            };
+
+            const addGroup = (name) => setGroups([...groups, { id: `g-${Date.now()}`, name }]);
+            const updateGroup = (id, newName) => {
+                setGroups(groups.map(g => g.id === id ? { ...g, name: newName } : g));
+            };
+            const deleteGroup = (id) => {
+                if (confirm('¿Eliminar este grupo Y desasignar a sus jugadores?')) {
+                    setGroups(groups.filter(g => g.id !== id));
+                    setPlayers(players.map(p => p.groupId === id ? { ...p, groupId: '' } : p));
+                }
+            };
+
+            const generateMatchesForGroup = (groupId) => {
+                const groupPlayers = players.filter(p => p.groupId === groupId);
+                if (groupPlayers.length < 2) return alert('Se necesitan al menos 2 jugadores en el grupo');
+                const newMatches = generateRoundRobin(groupPlayers).map(m => ({ ...m, groupId }));
+                setMatches([...matches.filter(m => m.groupId !== groupId), ...newMatches]);
+            };
+
+            const updateMatch = (matchId, s1, s2) => {
+                setMatches(prevMatches => prevMatches.map(m => m.id === matchId ? { ...m, score1: s1, score2: s2, played: s1.trim() !== '' && s2.trim() !== '', time: Date.now() } : m));
+            };
+
+            const lockMatch = (matchId) => {
+                setMatches(prevMatches => prevMatches.map(m => m.id === matchId ? { ...m, locked: true } : m));
+            };
+
+            const exportToPDF = () => {
+                const element = document.getElementById('main-content');
+                const opt = {
+                    margin: 10,
+                    filename: `Ranking_${config.club}_${new Date().toLocaleDateString()}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, backgroundColor: '#1a120b' },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+                html2pdf().set(opt).from(element).save();
+            };
+
+            const exportData = () => {
+                const data = {
+                    players, groups, matches, history, config, version: '2.1',
+                    exportDate: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Backup_Ranking_${config.club}_${new Date().toLocaleDateString()}.json`;
+                a.click();
+            };
+
+            const importData = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (confirm('¿Estás seguro de que quieres importar estos datos? Se sobrescribirán los datos actuales.')) {
+                            if (data.players) setPlayers(data.players);
+                            if (data.groups) setGroups(data.groups);
+                            if (data.matches) setMatches(data.matches);
+                            if (data.history) setHistory(data.history);
+                            if (data.config) setConfig(data.config);
+                            alert('Datos importados con éxito.');
+                        }
+                    } catch (err) { alert('Error al importar el archivo.'); }
+                };
+                reader.readAsText(file);
+            };
+
+            const calculateStandings = (groupId) => {
+                const gMatches = matches.filter(m => m.groupId === groupId && m.played);
+                const gPlayers = players.filter(p => p.groupId === groupId);
+                const table = gPlayers.map(p => ({
+                    ...p, pj: 0, pg: 0, pp: 0, sf: 0, sc: 0, gf: 0, gc: 0, pts: 0
+                }));
+
+                gMatches.forEach(m => {
+                    const p1 = table.find(p => p.id === m.p1);
+                    const p2 = table.find(p => p.id === m.p2);
+                    if (!p1 || !p2) return;
+
+                    const s1 = m.score1.split(/[\s,]+/).filter(x => x !== '').map(Number);
+                    const s2 = m.score2.split(/[\s,]+/).filter(x => x !== '').map(Number);
+
+                    p1.pj++; p2.pj++;
+                    let setsP1 = 0, setsP2 = 0;
+
+                    s1.forEach((games1, i) => {
+                        const games2 = s2[i] || 0;
+                        p1.gf += games1; p1.gc += games2;
+                        p2.gf += games2; p2.gc += games1;
+                        if (games1 > games2) setsP1++;
+                        else if (games2 > games1) setsP2++;
+                    });
+
+                    p1.sf += setsP1; p1.sc += setsP2;
+                    p2.sf += setsP2; p2.sc += setsP1;
+
+                    if (setsP1 > setsP2) { p1.pg++; p1.pts += config.winPoints; p2.pp++; p2.pts += config.lossPoints; }
+                    else { p2.pg++; p2.pts += config.winPoints; p1.pp++; p1.pts += config.lossPoints; }
+                });
+
+                return table.sort((a, b) => b.pts - a.pts || (b.sf - b.sc) - (a.sf - a.sc) || (b.gf - b.gc) - (a.gf - a.gc));
+            };
+
+
+
+            const executeSeasonClose = (preview) => {
+                if (!confirm('¿Confirmar el cierre de jornada?')) return;
+
+                const snapshot = groups.map(g => ({
+                    groupId: g.id,
+                    groupName: g.name,
+                    standings: calculateStandings(g.id)
+                })).filter(s => s.standings.length > 0);
+
+                const newHistoryItem = {
+                    id: `h-${Date.now()}`,
+                    date: new Date().toLocaleDateString(),
+                    timestamp: Date.now(),
+                    seasonNumber: history.length + 1,
+                    results: snapshot
+                };
+
+                setHistory([newHistoryItem, ...history]);
+
+                let newPlayers = [...players];
+                preview.forEach(change => {
+                    newPlayers = newPlayers.map(p => p.id === change.player.id ? { ...p, groupId: change.to } : p);
+                });
+
+                setPlayers(newPlayers);
+                setMatches([]);
+                setActiveTab('dashboard');
+                alert(`Jornada cerrada con éxito. La Temporada ${newHistoryItem.seasonNumber} ha sido guardada en el historial.`);
+            };
+
+            // --- Layout ---
+            return (
+                <div className="min-h-screen pb-24 md:pb-8">
+                    <nav className="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between border-b border-slate-700">
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
+                            <div className="p-2 tennis-gradient rounded-lg"><Icon name="trophy" className="text-slate-900" /></div>
+                            <h1 className="text-xl font-bold tracking-tight">
+                                {config.club.split(' ')[0]} <span className="text-orange-400">{config.club.split(' ').slice(1).join(' ')}</span>
+                            </h1>
+                        </div>
+                        <div className="hidden lg:flex gap-8 text-sm font-bold uppercase tracking-tighter">
+                            <TabBtn active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')}>Dashboard</TabBtn>
+                            <TabBtn active={activeTab === 'players'} onClick={() => setActiveTab('players')}>Tenistas</TabBtn>
+                            <TabBtn active={activeTab === 'groups'} onClick={() => setActiveTab('groups')}>Grupos</TabBtn>
+                            <TabBtn active={activeTab === 'generate'} onClick={() => setActiveTab('generate')}>Generar</TabBtn>
+                            <TabBtn active={activeTab === 'results'} onClick={() => setActiveTab('results')}>Resultados</TabBtn>
+                            <TabBtn active={activeTab === 'standings'} onClick={() => setActiveTab('standings')}>Ranking</TabBtn>
+                            <TabBtn active={activeTab === 'relegation'} onClick={() => setActiveTab('relegation')}>Cierre</TabBtn>
+                            <TabBtn active={activeTab === 'history'} onClick={() => setActiveTab('history')}>Historial</TabBtn>
+                            <TabBtn active={activeTab === 'config'} onClick={() => setActiveTab('config')}><Icon name="settings" className="w-4 h-4" /></TabBtn>
+                        </div>
+                    </nav>
+
+                    <main className="max-w-7xl mx-auto p-6 animate-in slide-in-from-bottom-2 duration-500">
+                        <div id="main-content-wrapper">
+                            {activeTab === 'dashboard' && <Dashboard groups={groups} players={players} matches={matches} stats={stats} config={config} setActiveTab={setActiveTab} setSelectedGroup={setSelectedGroup} />}
+                            {activeTab === 'players' && <PlayerView players={players} groups={groups} addPlayer={addPlayer} updatePlayer={updatePlayer} deletePlayer={deletePlayer} />}
+                            {activeTab === 'groups' && <GroupView groups={groups} players={players} addPlayer={addPlayer} addGroup={addGroup} updateGroup={updateGroup} deleteGroup={deleteGroup} generateMatchesForGroup={generateMatchesForGroup} selectedId={selectedGroup} setSelectedId={setSelectedGroup} />}
+                            {activeTab === 'generate' && <GenerationView groups={groups} players={players} generateMatchesForGroup={generateMatchesForGroup} matches={matches} />}
+                            {activeTab === 'results' && <ResultsView groups={groups} matches={matches} updateMatch={updateMatch} lockMatch={lockMatch} />}
+                            {activeTab === 'standings' && <StandingsView groups={groups} calculateStandings={calculateStandings} exportToPDF={exportToPDF} />}
+                            {activeTab === 'relegation' && <RelegationView groups={groups} calculateStandings={calculateStandings} executeSeasonClose={executeSeasonClose} />}
+                            {activeTab === 'history' && <HistoryView history={history} />}
+                            {activeTab === 'config' && (
+                                <ConfigView
+                                    config={config}
+                                    setConfig={setConfig}
+                                    groups={groups}
+                                    setGroups={setGroups}
+                                    exportData={exportData}
+                                    importData={importData}
+                                    installApp={installApp}
+                                    showInstallBtn={!!deferredPrompt}
+                                />
+                            )}
+                        </div>
+                    </main>
+
+                    {/* Mobile Menu */}
+                    <div className="lg:hidden fixed bottom-0 left-0 right-0 glass border-t border-slate-700 flex overflow-x-auto py-3 no-scrollbar scroll-smooth">
+                        <div className="flex min-w-max justify-around px-6 gap-8">
+                            <MobTab icon="layout-dashboard" label="Dash" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+                            <MobTab icon="check-square" label="Resultados" active={activeTab === 'results'} onClick={() => setActiveTab('results')} />
+                            <MobTab icon="award" label="Ranking" active={activeTab === 'standings'} onClick={() => setActiveTab('standings')} />
+                            <MobTab icon="save" label="Cierre" active={activeTab === 'relegation'} onClick={() => setActiveTab('relegation')} />
+                            <MobTab icon="layers" label="Grupos" active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} />
+                            <MobTab icon="users" label="Tenistas" active={activeTab === 'players'} onClick={() => setActiveTab('players')} />
+                            <MobTab icon="refresh-ccw" label="Generar" active={activeTab === 'generate'} onClick={() => setActiveTab('generate')} />
+                            <MobTab icon="history" label="Historial" active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+                            <MobTab icon="settings" label="Ajustes" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+
+
+        const TabBtn = ({ children, active, onClick }) => (
+            <button onClick={onClick} className={`transition-all hover:text-lime-400 ${active ? 'tab-active' : 'text-slate-400'}`}>
+                {children}
+            </button>
+        );
+
+        const MobTab = ({ icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 ${active ? 'text-orange-400' : 'text-slate-500'}`}>
+                <Icon name={icon} className="w-5 h-5" />
+                <span className="text-[8px] font-bold uppercase">{label}</span>
+            </button>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW Registered!', reg))
+                    .catch(err => console.log('SW Registration failed:', err));
+            });
+        }
+    </script>
+</body>
+
+</html>
