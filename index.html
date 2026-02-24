@@ -14,16 +14,14 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="./manifest.json">
-    <meta name="theme-color" content="#ea580c">
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+    <link rel="manifest" href="./site.webmanifest">
+    <meta name="theme-color" content="#ffffff">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Ranking Tenis">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2862/2862833.png">
-
-    <!-- iPhone Splash Screens (Simplified approach for now) -->
-    <link rel="apple-touch-startup-image" href="https://cdn-icons-png.flaticon.com/512/2862/2862833.png">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
 
@@ -238,52 +236,72 @@
         const PWAInstallBanner = ({ deferredPrompt, installApp }) => {
             const [isIOS, setIsIOS] = useState(false);
             const [isInAppBrowser, setIsInAppBrowser] = useState(false);
+            const [isStandalone, setIsStandalone] = useState(false);
 
             useEffect(() => {
                 const ua = window.navigator.userAgent.toLowerCase();
-                const isIPad = ua.indexOf('ipad') > -1;
-                const isIPhone = ua.indexOf('iphone') > -1;
-                setIsIOS(isIPad || isIPhone);
+                setIsIOS(/iphone|ipad|ipod/.test(ua));
+                setIsInAppBrowser(/whatsapp|instagram|fbav|fb_iab|fban/.test(ua));
 
-                // Detect if it's likely an in-app browser (WhatsApp, Instagram, etc.)
-                setIsInAppBrowser(ua.indexOf('whatsapp') > -1 || ua.indexOf('instagram') > -1 || ua.indexOf('fbav') > -1);
+                // Comprehensive standalone check
+                setIsStandalone(
+                    window.matchMedia('(display-mode: standalone)').matches ||
+                    (window.navigator.standalone) ||
+                    document.referrer.includes('android-app://')
+                );
             }, []);
 
-            if (window.matchMedia('(display-mode: standalone)').matches) return null;
+            if (isStandalone) return null;
 
             return (
-                <div className="glass p-5 rounded-3xl border-2 border-orange-500/30 animate-in fade-in slide-in-from-top-4 duration-500 mb-8">
+                <div className="bg-gradient-to-br from-orange-600/20 to-orange-900/40 p-6 rounded-3xl border-2 border-orange-500/50 shadow-2xl shadow-orange-900/20 animate-in fade-in slide-in-from-top-6 duration-700 mb-8 border-dashed">
                     <div className="flex items-start gap-4">
-                        <div className="p-3 bg-orange-600/20 rounded-2xl shrink-0"><Icon name="smartphone" className="text-orange-400" /></div>
-                        <div className="space-y-2">
-                            <h4 className="font-black uppercase tracking-tighter text-orange-400 leading-none">Instala esta App</h4>
-                            <p className="text-[11px] text-slate-300 leading-tight">Para una mejor experiencia y uso offline:</p>
+                        <div className="p-4 bg-orange-600 rounded-2xl shrink-0 shadow-lg shadow-orange-600/20">
+                            <Icon name="smartphone" className="text-white w-6 h-6" />
+                        </div>
+                        <div className="space-y-3 flex-1">
+                            <h4 className="font-black uppercase tracking-tighter text-orange-400 text-lg leading-none">⚠️ ¡Úsala como una App Móvil!</h4>
+                            <p className="text-sm text-slate-100 font-medium leading-tight">Para ver el ranking sin barras de navegador y usarlo sin internet:</p>
 
-                            {isInAppBrowser && (
-                                <div className="bg-red-500/10 p-2 rounded-lg border border-red-500/20">
-                                    <p className="text-[10px] font-bold text-red-200">⚠️ Estás en el navegador de WhatsApp.</p>
-                                    <p className="text-[10px] text-red-300">Pulsa los 3 puntos (arriba) y elige <strong>"Abrir en Chrome"</strong> o <strong>"Abrir en Safari"</strong> para poder instalar.</p>
+                            {isInAppBrowser ? (
+                                <div className="bg-red-500/20 p-3 rounded-xl border border-red-500/30 space-y-2">
+                                    <p className="text-xs font-bold text-red-200">Detectado: Navegador Interno (WhatsApp/IG)</p>
+                                    <p className="text-xs text-red-100">Para instalarla, primero haz esto:</p>
+                                    <p className="text-[11px] text-red-200/80 bg-red-900/30 p-2 rounded-lg">
+                                        1. Pulsa los <strong>3 puntos</strong> (Android) o el botón de <strong>Compartir</strong> (iPhone) arriba.<br />
+                                        2. Elige <strong>"Abrir en Chrome"</strong> o <strong>"Abrir en Safari"</strong>.
+                                    </p>
                                 </div>
-                            )}
-
-                            {!isInAppBrowser && isIOS && (
-                                <div className="space-y-1 text-[11px] text-slate-400">
-                                    <p className="flex items-center gap-2"><span className="bg-slate-800 w-4 h-4 flex items-center justify-center rounded text-[8px]">1</span> Pulsa <strong>Compartir</strong> (cuadrado con flecha).</p>
-                                    <p className="flex items-center gap-2"><span className="bg-slate-800 w-4 h-4 flex items-center justify-center rounded text-[8px]">2</span> Elige <strong>"Añadir a pantalla de inicio"</strong>.</p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {isIOS ? (
+                                        <div className="space-y-3 bg-white/5 p-3 rounded-xl border border-white/10">
+                                            <p className="text-xs font-bold text-orange-300">En iPhone / iPad:</p>
+                                            <div className="space-y-2 text-[12px] text-slate-200">
+                                                <p className="flex items-center gap-2"><span className="bg-orange-600 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold">1</span> Pulsa el botón <strong>Compartir</strong> (cuadrado con flecha ↑).</p>
+                                                <p className="flex items-center gap-2"><span className="bg-orange-600 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold">2</span> Baja y elige <strong>"Añadir a pantalla de inicio"</strong>.</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {deferredPrompt ? (
+                                                <button
+                                                    onClick={installApp}
+                                                    className="w-full bg-orange-600 text-white font-black py-4 rounded-2xl text-sm hover:bg-orange-700 transition-all uppercase tracking-widest shadow-lg shadow-orange-600/40"
+                                                >
+                                                    ✨ Instalar App Ahora
+                                                </button>
+                                            ) : (
+                                                <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                                                    <p className="text-xs font-bold text-orange-300">En Android (Chrome):</p>
+                                                    <p className="text-[12px] text-slate-200 mt-1">
+                                                        Pulsa el botón de <strong>Menú (⋮)</strong> y elige <strong>"Instalar aplicación"</strong> o "Añadir a pantalla de inicio".
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-
-                            {!isInAppBrowser && !isIOS && deferredPrompt && (
-                                <button
-                                    onClick={installApp}
-                                    className="w-full mt-2 bg-orange-600 text-white font-black py-2 rounded-xl text-[10px] hover:bg-orange-700 transition-all uppercase"
-                                >
-                                    Instalar Ahora
-                                </button>
-                            )}
-
-                            {!isInAppBrowser && !isIOS && !deferredPrompt && (
-                                <p className="text-[10px] text-slate-500 italic">Abre el menú de Chrome y elige <strong>"Instalar Aplicación"</strong>.</p>
                             )}
                         </div>
                     </div>
